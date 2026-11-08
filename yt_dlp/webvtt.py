@@ -320,6 +320,8 @@ class CueBlock(Block):
             stream.write(self.settings)
         stream.write('\n')
         stream.write(self.text)
+        if self.text and not self.text.endswith('\n'):
+            stream.write('\n')
         stream.write('\n')
 
     @property
