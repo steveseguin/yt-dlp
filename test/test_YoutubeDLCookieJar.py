@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 # Allow direct execution
+import io
 import os
 import sys
 import unittest
@@ -15,6 +16,57 @@ from yt_dlp.cookies import YoutubeDLCookieJar
 
 
 class TestYoutubeDLCookieJar(unittest.TestCase):
+    def test_save_loaded_file_object(self):
+        contents = '# Netscape HTTP Cookie File\nexample.invalid\tFALSE\t/\tTRUE\t0\ttest\tvalue\n'
+        cookiefile = io.StringIO(contents)
+        cookiejar = YoutubeDLCookieJar(cookiefile)
+        cookiejar.load()
+        self.assertEqual(cookiefile.tell(), len(contents))
+
+        cookiejar.save()
+        self.assertTrue(cookiefile.getvalue().startswith('# Netscape HTTP Cookie File\n'))
+        self.assertNotIn('\0', cookiefile.getvalue())
+        self.assertFalse(cookiefile.closed)
+
+        cookiefile.seek(0)
+        reloaded = YoutubeDLCookieJar(cookiefile)
+        reloaded.load()
+        self.assertEqual(reloaded.get_cookie_header('https://example.invalid/'), 'test=value')
+
+    def test_save_file_object_repeatedly(self):
+        cookiefile = io.StringIO()
+        cookiejar = YoutubeDLCookieJar(cookiefile)
+        cookiejar.load(filename='./test/testdata/cookies/session_cookies.txt')
+        cookiejar.save()
+        expected = cookiefile.getvalue()
+        for _ in range(2):
+            cookiejar.save()
+            self.assertEqual(cookiefile.getvalue(), expected)
+
+    def test_save_file_object_removes_old_contents(self):
+        with tempfile.TemporaryFile(mode='w+', encoding='utf-8') as cookiefile:
+            cookiefile.write('old contents' * 100)
+            cookiejar = YoutubeDLCookieJar(cookiefile)
+            cookiejar.save()
+            cookiefile.seek(0)
+            contents = cookiefile.read()
+            self.assertTrue(contents.startswith('# Netscape HTTP Cookie File\n'))
+            self.assertNotIn('\0', contents)
+            self.assertNotIn('old contents', contents)
+            self.assertFalse(cookiefile.closed)
+            cookiefile.seek(0)
+            reloaded = YoutubeDLCookieJar(cookiefile)
+            reloaded.load()
+            self.assertFalse(list(reloaded))
+
+    def test_open_file_object_preserves_read_position(self):
+        cookiefile = io.StringIO('before;after')
+        cookiefile.seek(7)
+        with YoutubeDLCookieJar().open(cookiefile) as stream:
+            self.assertIs(stream, cookiefile)
+            self.assertEqual(stream.read(), 'after')
+        self.assertFalse(cookiefile.closed)
+
     def test_keep_session_cookies(self):
         cookiejar = YoutubeDLCookieJar('./test/testdata/cookies/session_cookies.txt')
         cookiejar.load()

@@ -1251,6 +1251,7 @@ class YoutubeDLCookieJar(http.cookiejar.MozillaCookieJar):
                 yield f
         else:
             if write:
+                file.seek(0)
                 file.truncate(0)
             yield file
 
