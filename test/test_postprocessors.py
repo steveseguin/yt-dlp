@@ -2,6 +2,7 @@
 
 # Allow direct execution
 import os
+import re
 import sys
 import unittest
 
@@ -557,6 +558,44 @@ class TestModifyChaptersPP(unittest.TestCase):
                 'c', '[SponsorBlock]: Sponsor', '[SponsorBlock]: Unpaid/Self Promotion',
                 '[SponsorBlock]: Sponsor', 'c',
             ]), [])
+
+    def test_remove_marked_arrange_sponsors_QueuedTailOverlapsLaterCut(self):
+        self._pp._remove_chapters_patterns = {re.compile('^cut$')}
+        self._pp._remove_sponsor_segments = {'intro'}
+        chapters = self._chapters([2, 10, 12, 14, 16, 24], ['one', 'cut', 'two', 'three', 'cut', 'four'])
+        # SponsorBlock segments need not be ordered by start time. A sponsor tail
+        # can be queued before the cut that covers it is discovered.
+        sponsors = [
+            dict(self._sponsor_chapter(start, end, category), category=category)
+            for start, end, category in (
+                (16, 22, 'intro'), (8, 20, 'preview'),
+                (6, 18, 'filler'), (4, 16, 'music_offtopic'))]
+        chapters, sponsors = self._pp._mark_chapters_to_remove(chapters, sponsors)
+        self._remove_marked_arrange_sponsors_test_impl(
+            chapters + sponsors,
+            self._chapters([2, 6, 8], [
+                'one', '[SponsorBlock]: Preview/Recap, Filler Tangent, Non-Music Section', 'four']),
+            [self._chapter(2, 10, remove=True), self._chapter(14, 22, remove=True)])
+
+    def test_remove_marked_arrange_sponsors_InheritedIndexSkipsEarlierCut(self):
+        # Merely searching all cuts for chapters without a cut_idx is not enough:
+        # an inherited index can also skip an earlier cut covering a queued tail.
+        chapters = [
+            *self._chapters([4, 7, 21, 29, 100], ['c0', 'c1', 'c2', 'c3', 'c4']),
+            self._sponsor_chapter(47, 49, 'chapter'),
+            self._sponsor_chapter(37, 74, 'preview', remove=True),
+            self._sponsor_chapter(92, 93, 'preview', remove=True),
+            self._sponsor_chapter(27, 35, 'sponsor'),
+            self._sponsor_chapter(35, 86, 'music_offtopic', remove=True),
+            self._sponsor_chapter(8, 97, 'filler'),
+            self._sponsor_chapter(22, 70, 'interaction')]
+        self._remove_marked_arrange_sponsors_test_impl(
+            chapters, self._chapters([4, 7, 8, 22, 27, 35, 45, 48], [
+                'c0', 'c1', 'c2', '[SponsorBlock]: Filler Tangent',
+                '[SponsorBlock]: Filler Tangent, Interaction Reminder',
+                '[SponsorBlock]: Filler Tangent, Interaction Reminder, Sponsor',
+                '[SponsorBlock]: Filler Tangent', 'c4']),
+            [self._chapter(35, 86, remove=True), self._chapter(92, 93, remove=True)])
 
     def test_make_concat_opts_CommonCase(self):
         sponsor_chapters = [self._chapter(1, 2, 's1'), self._chapter(10, 20, 's2')]
