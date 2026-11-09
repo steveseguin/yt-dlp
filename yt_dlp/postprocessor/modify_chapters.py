@@ -136,12 +136,18 @@ class ModifyChaptersPP(FFmpegPostProcessor):
             return len(cuts) - 1
 
         def excess_duration(c):
-            # Cuts that are completely within the chapter reduce chapters' duration.
-            # Since cuts can overlap, excess duration may be less that the sum of cuts' durations.
-            # To avoid that, chapter stores the index to the fist cut within the chapter,
-            # instead of storing excess duration. append_cut ensures that subsequent cuts (if any)
-            # will be merged with previous ones (if necessary).
-            cut_idx, excess = c.pop('cut_idx', len(cuts)), 0
+            # Split chapters can be queued before overlapping cuts are discovered.
+            # Locate the first cut ending after this chapter starts, rather than
+            # relying on a cut index inherited by only some of the split pieces.
+            c.pop('cut_idx', None)
+            cut_idx, upper = 0, len(cuts)
+            while cut_idx < upper:
+                mid = (cut_idx + upper) // 2
+                if cuts[mid]['end_time'] <= c['start_time']:
+                    cut_idx = mid + 1
+                else:
+                    upper = mid
+            excess = 0
             while cut_idx < len(cuts):
                 cut = cuts[cut_idx]
                 if cut['start_time'] >= c['end_time']:
